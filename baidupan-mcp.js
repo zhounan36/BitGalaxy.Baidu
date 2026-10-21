@@ -104,6 +104,67 @@ const tools = [
       "查询下载任务列表与进度。phase 含义：starting/downloading/packing/done/error。",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "pan_share_parse",
+    description:
+      "解析百度网盘分享链接，返回文件列表（fs_id/名称/大小/是否目录）。链接内带提取码（?pwd=xxxx）时自动识别并填写；需要提取码但未提供时返回 need_pwd=true，应向用户询问后带 pwd 参数重试。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        link: {
+          type: "string",
+          description:
+            "分享链接或整段分享文本（必填，支持 pan.baidu.com/s/xxx、share/init?surl=xxx、裸 surl，可直接粘贴“链接 提取码:xxxx”整段）",
+        },
+        pwd: { type: "string", description: "提取码（4 位）。链接内已含 ?pwd= 时可省略" },
+      },
+      required: ["link"],
+    },
+  },
+  {
+    name: "pan_share_transfer",
+    description:
+      "把分享文件转存到自己网盘（保存到「来自：分享」目录）。先用 pan_share_parse 拿到 shareid/uk/sekey 与文件 fs_id 后调用。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        shareid: { type: "string", description: "分享 id（来自 pan_share_parse 结果，必填）" },
+        uk: { type: "string", description: "分享者 uk（来自 pan_share_parse 结果，必填）" },
+        sekey: {
+          type: "string",
+          description: "私密分享校验提取码后的 sekey（来自 pan_share_parse 结果，公开分享可省略）",
+        },
+        fs_ids: {
+          type: "array",
+          items: { type: "integer" },
+          description: "要转存的文件 id 数组（来自 pan_share_parse 结果，必填）",
+        },
+      },
+      required: ["shareid", "uk", "fs_ids"],
+    },
+  },
+  {
+    name: "pan_share_save",
+    description:
+      "一站式处理分享链接：解析（自动填写链接内提取码）→ 转存到自己网盘 → 下载到本地目录。用户提供分享链接即可自动完成下载；需提取码且链接内没有时返回 need_pwd=true，询问后带 pwd 重试即可。下载为异步任务，用 pan_tasks 查询进度。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        link: {
+          type: "string",
+          description: "分享链接或整段分享文本（必填）",
+        },
+        pwd: { type: "string", description: "提取码（4 位）。链接内已含 ?pwd= 时可省略" },
+        save_path: {
+          type: "string",
+          description:
+            "本地下载目录（必填则下载；文件保存到该目录，目录类分享打包为 <目录名>.zip）。省略则只转存不下载",
+        },
+        download: { type: "boolean", description: "转存后是否下载到本地，默认 true" },
+      },
+      required: ["link"],
+    },
+  },
 ];
 
 async function callApi(method, path, body) {
@@ -146,6 +207,9 @@ const handlers = {
     ),
   pan_download: (a) => callApi("POST", "/download", a),
   pan_download_dir: (a) => callApi("POST", "/download_dir", a),
+  pan_share_parse: (a) => callApi("POST", "/share/parse", a),
+  pan_share_transfer: (a) => callApi("POST", "/share/transfer", a),
+  pan_share_save: (a) => callApi("POST", "/share/save", a),
   pan_tasks: () => callApi("GET", "/tasks"),
 };
 

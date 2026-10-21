@@ -9,12 +9,15 @@
 //!   GET  /search?key=关键词&dir=/                        递归搜索
 //!   POST /download        {fs_id, save_path, name?}      下载单个文件（异步任务）
 //!   POST /download_dir    {dir, save_path}               整目录递归打包 zip（异步任务）
+//!   POST /share/parse     {link, pwd?}                   解析分享链接（自动识别链接内提取码）
+//!   POST /share/transfer  {shareid, uk, sekey?, fs_ids}  分享文件转存到自己网盘
+//!   POST /share/save      {link, pwd?, save_path?}       一站式：解析→转存→下载（异步任务）
 //!   GET  /tasks                                          下载任务进度
 //!   GET  /mcp.js                                         下载 MCP 服务器脚本（配置进 AI 客户端用）
 //!
 //! 配套 server/mcp.js 把这些接口包装为 MCP 工具供 AI 客户端使用。
 
-use crate::{config, download, oauth, pan_api};
+use crate::{config, download, oauth, pan_api, share};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -201,6 +204,9 @@ fn route(
                 "GET /search?key=&dir=": "递归搜索文件",
                 "POST /download {fs_id, save_path, name?}": "下载单个文件（异步）",
                 "POST /download_dir {dir, save_path}": "整目录打包 zip 下载（异步）",
+                "POST /share/parse {link, pwd?}": "解析分享链接，返回文件列表（链接内提取码自动识别）",
+                "POST /share/transfer {shareid, uk, sekey?, fs_ids}": "分享文件转存到自己网盘",
+                "POST /share/save {link, pwd?, save_path?}": "一站式：解析分享→转存→下载到本地（异步）",
                 "GET /tasks": "下载任务进度（phase: starting/downloading/packing/done/error）",
                 "GET /mcp.js": "下载 MCP 服务器脚本（配置到 AI 客户端后，AI 即可使用上述能力）",
             },
@@ -367,6 +373,147 @@ fn route(
             Ok(json!({ "id": reply_id, "hint": "异步任务已开始，GET /tasks 查询进度" }))
         }
 
+        // ---------- 分享链接：解析 / 转存 / 一站式转存下载 ----------
+
+        "/share/parse" if is_post => {
+            let v: Value = parse_json_body(body)?;
+            let link = req_str(&v, "link", "缺少 link（分享链接，可整段粘贴含提取码的文本）")?;
+            let pwd = v["pwd"].as_str().unwrap_or_default().to_string();
+            let info = tauri::async_runtime::block_on(share::share_parse(link, pwd))
+                .map_err(auth_err)?;
+            let mut map = serde_json::to_value(&info).unwrap_or(Value::Null);
+            if info.need_pwd {
+                map["hint"] = json!("该分享需要提取码：请向用户询问 4 位提取码后带 pwd 参数重试");
+            }
+            Ok(map)
+        }
+
+        "/share/transfer" if is_post => {
+            let v: Value = parse_json_body(body)?;
+            let shareid = req_str(&v, "shareid", "缺少 shareid（来自 /share/parse 结果）")?;
+            let uk = req_str(&v, "uk", "缺少 uk（来自 /share/parse 结果）")?;
+            let sekey = v["sekey"].as_str().unwrap_or_default().to_string();
+            let fs_ids: Vec<u64> = v["fs_ids"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|i| i.as_u64()).collect())
+                .unwrap_or_default();
+            if fs_ids.is_empty() {
+                return Err((400u16, "缺少 fs_ids（要转存的文件 id 数组，来自 /share/parse 结果）".into()));
+            }
+            tauri::async_runtime::block_on(oauth::ensure_token()).map_err(auth_err)?;
+            let results =
+                tauri::async_runtime::block_on(share::share_transfer(shareid, uk, sekey, fs_ids))
+                    .map_err(auth_err)?;
+            Ok(json!({
+                "transferred": results,
+                "hint": "已转存到自己网盘「来自：分享」目录，可用 GET /files 查看，或 POST /download 下载",
+            }))
+        }
+
+        // 一站式：解析（自动填提取码）→ 转存 → 下载到本地目录。
+        // save_path 为本地目录：文件直接存入；目录类分享打包为 <目录名>.zip。
+        "/share/save" if is_post => {
+            let v: Value = parse_json_body(body)?;
+            let link = req_str(&v, "link", "缺少 link（分享链接，可整段粘贴含提取码的文本）")?;
+            let pwd = v["pwd"].as_str().unwrap_or_default().to_string();
+            let save_path = v["save_path"].as_str().unwrap_or_default().trim().to_string();
+            let download = v["download"].as_bool().unwrap_or(true) && !save_path.is_empty();
+
+            let info = tauri::async_runtime::block_on(share::share_parse(link, pwd))
+                .map_err(auth_err)?;
+            if info.need_pwd {
+                return Ok(json!({
+                    "need_pwd": true,
+                    "hint": "该分享需要提取码：请向用户询问 4 位提取码后带 pwd 参数重试",
+                }));
+            }
+            let fs_ids: Vec<u64> = info.files.iter().map(|f| f.fs_id).collect();
+            if fs_ids.is_empty() {
+                return Err((400u16, "分享内容为空".into()));
+            }
+            tauri::async_runtime::block_on(oauth::ensure_token()).map_err(auth_err)?;
+            let shareid = info.shareid.clone();
+            let uk = info.uk.clone();
+            let sekey = info.sekey.clone();
+            let results = tauri::async_runtime::block_on(share::share_transfer(
+                shareid,
+                uk,
+                sekey,
+                fs_ids,
+            ))
+            .map_err(auth_err)?;
+
+            // 按需下载：文件 → 单文件任务；目录 → 打包 zip 任务
+            let mut tasks = Vec::new();
+            if download {
+                let save_dir = save_path.trim_end_matches(['/', '\\']).to_string();
+                for r in &results {
+                    let Some(src) = info.files.iter().find(|f| f.fs_id == r.from_fs_id) else {
+                        continue;
+                    };
+                    let (id, task_name) = if src.is_dir {
+                        (format!("z:{:x}", r.fs_id), format!("目录打包：{}", src.name))
+                    } else {
+                        (format!("d:{}", r.fs_id), src.name.clone())
+                    };
+                    upsert_task(TaskEntry {
+                        id: id.clone(),
+                        name: task_name.clone(),
+                        total: 0,
+                        done: 0,
+                        phase: "starting".into(),
+                        message: String::new(),
+                    });
+                    let app = app.clone();
+                    let save_dir = save_dir.clone();
+                    let id2 = id.clone();
+                    let name = src.name.clone();
+                    let is_dir = src.is_dir;
+                    let netdisk_path = r.path.clone();
+                    let fs_id = r.fs_id;
+                    tauri::async_runtime::spawn(async move {
+                        let res = if is_dir {
+                            download_dir_zip(&app, &netdisk_path, &save_dir, &name, id2.clone())
+                                .await
+                        } else {
+                            let dest = format!("{}\\{}", save_dir, name);
+                            download::download_file(app, fs_id, dest, name).await
+                        };
+                        if let Err(e) = res {
+                            upsert_task(TaskEntry {
+                                id: id2,
+                                name: String::new(),
+                                total: 0,
+                                done: 0,
+                                phase: "error".into(),
+                                message: e,
+                            });
+                        }
+                    });
+                    tasks.push(json!({ "id": id, "name": task_name }));
+                }
+            }
+
+            Ok(json!({
+                "need_pwd": false,
+                "transferred": results,
+                "download": if download {
+                    json!({
+                        "save_dir": save_path,
+                        "tasks": tasks,
+                        "hint": "下载任务已开始，GET /tasks 查询进度，phase=done 即完成",
+                    })
+                } else {
+                    Value::Null
+                },
+                "hint": if download {
+                    "已转存并开始下载".to_string()
+                } else {
+                    "已转存到自己网盘「来自：分享」目录（未提供 save_path，跳过下载）".to_string()
+                },
+            }))
+        }
+
         "/tasks" if is_get => {
             let tasks = TASKS
                 .lock()
@@ -389,6 +536,57 @@ fn auth_err(e: String) -> (u16, String) {
     } else {
         (500, e)
     }
+}
+
+// ---------- 分享接口辅助 ----------
+
+/// 解析 POST 请求体 JSON
+fn parse_json_body(body: &str) -> Result<Value, (u16, String)> {
+    serde_json::from_str(body).map_err(|e| (400u16, format!("请求体不是合法 JSON: {e}")))
+}
+
+/// 取必填的非空字符串字段
+fn req_str(v: &Value, key: &str, err: &str) -> Result<String, (u16, String)> {
+    v[key]
+        .as_str()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or((400u16, err.to_string()))
+}
+
+/// 把网盘目录递归打包下载为 `<save_dir>/<name>.zip`（复用 download_zip）
+async fn download_dir_zip(
+    app: &AppHandle,
+    netdisk_dir: &str,
+    save_dir: &str,
+    name: &str,
+    id: String,
+) -> Result<(), String> {
+    tokio::fs::create_dir_all(save_dir)
+        .await
+        .map_err(|e| format!("创建目录失败: {e}"))?;
+    let files = pan_api::list_files_recursive(&[netdisk_dir.to_string()]).await?;
+    if files.is_empty() {
+        return Err("目录中没有文件".into());
+    }
+    let prefix = netdisk_dir.trim_end_matches('/');
+    let items: Vec<download::ZipItem> = files
+        .iter()
+        .map(|f| download::ZipItem {
+            fs_id: f.fs_id,
+            rel_path: f
+                .path
+                .strip_prefix(prefix)
+                .unwrap_or(&f.path)
+                .trim_start_matches('/')
+                .to_string(),
+            size: f.size,
+        })
+        .collect();
+    let zip_path = format!("{save_dir}\\{name}.zip");
+    let task_name = format!("目录打包：{name}");
+    // download_zip 失败时会自行推送 error 事件并更新任务表
+    download::download_zip(app.clone(), items, zip_path, task_name, id).await
 }
 
 // ---------- 查询串解析 ----------
