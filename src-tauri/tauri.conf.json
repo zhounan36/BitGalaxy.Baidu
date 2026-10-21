@@ -30,7 +30,8 @@
     "targets": ["nsis"],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "./nsis-hooks.nsh"
       }
     },
     "icon": ["icons/icon.ico"]

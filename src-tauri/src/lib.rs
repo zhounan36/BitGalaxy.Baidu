@@ -153,6 +153,10 @@ pub fn run() {
             config::init_config();
             // 本地 HTTP API（供 AI 等本机程序调用，仅监听 127.0.0.1）
             api_server::start(app.handle().clone());
+            // 启动时自动把最新 MCP 脚本写入用户目录（升级/重装后立即更新，无需手动配置）
+            if let Err(e) = api_server::install_mcp_script() {
+                eprintln!("[mcp] 更新用户目录脚本失败: {e}");
+            }
             // 窗口标题跟随产品名
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_title("百度网盘 Lite");
