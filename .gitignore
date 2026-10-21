@@ -3,3 +3,11 @@ dist/
 src-tauri/target/
 *.local
 .DS_Store
+
+# 短视频推广计划书（不提交）
+短视频推广计划书.md
+Remotion视频制作计划书.md
+
+# Remotion 制作工程与渲染产物（不提交）
+video/
+video/out/
