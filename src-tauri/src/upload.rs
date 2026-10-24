@@ -26,6 +26,9 @@ pub struct Progress {
     /// hashing / uploading / merging / done / error
     pub phase: &'static str,
     pub message: String,
+    /// 下载任务的目标文件路径（前端用于打开所在文件夹）；上传任务不携带
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 pub fn emit(app: &AppHandle, p: Progress) {
@@ -90,6 +93,7 @@ pub async fn upload_files(
                     done: 0,
                     phase: "error",
                     message: e,
+                    path: None,
                 },
             );
         }
@@ -115,7 +119,7 @@ async fn upload_one(
     let block_md5s = calc_block_md5s(&mut file, size)?;
     let block_list_json = serde_json::to_string(&block_md5s).unwrap();
 
-    emit(app, Progress { kind: "upload", id: id.clone(), name: name.to_string(), total: size, done: 0, phase: "hashing", message: String::new() });
+    emit(app, Progress { kind: "upload", id: id.clone(), name: name.to_string(), total: size, done: 0, phase: "hashing", message: String::new(), path: None });
 
     // 1. 预上传
     let pre = form_post(
@@ -137,7 +141,7 @@ async fn upload_one(
         ));
     }
     if pre["return_type"].as_i64() == Some(2) {
-        emit(app, Progress { kind: "upload", id, name: name.to_string(), total: size, done: size, phase: "done", message: "秒传成功".into() });
+        emit(app, Progress { kind: "upload", id, name: name.to_string(), total: size, done: size, phase: "done", message: "秒传成功".into(), path: None });
         return Ok(());
     }
     let uploadid = pre["uploadid"].as_str().unwrap_or_default().to_string();
@@ -177,11 +181,11 @@ async fn upload_one(
             return Err(format!("分片上传失败: {} {}", v["error_code"], v["error_msg"]));
         }
         done += chunk.len() as u64;
-        emit(app, Progress { kind: "upload", id: id.clone(), name: name.to_string(), total: size, done, phase: "uploading", message: String::new() });
+        emit(app, Progress { kind: "upload", id: id.clone(), name: name.to_string(), total: size, done, phase: "uploading", message: String::new(), path: None });
     }
 
     // 3. 创建文件（合并分片）
-    emit(app, Progress { kind: "upload", id: id.clone(), name: name.to_string(), total: size, done, phase: "merging", message: String::new() });
+    emit(app, Progress { kind: "upload", id: id.clone(), name: name.to_string(), total: size, done, phase: "merging", message: String::new(), path: None });
     let created = form_post(
         &format!("{CREATE_URL}&access_token={token}"),
         &[
@@ -200,7 +204,7 @@ async fn upload_one(
             created["error_code"], created["error_msg"]
         ));
     }
-    emit(app, Progress { kind: "upload", id, name: name.to_string(), total: size, done: size, phase: "done", message: String::new() });
+    emit(app, Progress { kind: "upload", id, name: name.to_string(), total: size, done: size, phase: "done", message: String::new(), path: None });
     Ok(())
 }
 

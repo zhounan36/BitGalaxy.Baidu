@@ -364,6 +364,15 @@ export default function App() {
     }
   };
 
+  // 打开下载任务所在文件夹
+  const openDownloadFolder = async (path) => {
+    try {
+      await api.openDownloadFolder(path);
+    } catch (e) {
+      notify(e, "error");
+    }
+  };
+
   if (!ready) return <div className="boot">正在启动…</div>;
   if (!logged)
     return (
@@ -427,6 +436,7 @@ export default function App() {
         onClear={clearFinishedTasks}
         onPause={pauseDownload}
         onResume={resumeDownload}
+        onOpenFolder={openDownloadFolder}
       />
       {modal && <Modal modal={modal} onClose={() => setModal(null)} />}
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}

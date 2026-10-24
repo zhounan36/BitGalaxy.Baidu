@@ -202,15 +202,16 @@ pub async fn list_files_recursive(dirs: &[String]) -> Result<Vec<FileItem>, Stri
     Ok(out)
 }
 
-/// 获取文件下载直链 dlink
-pub async fn file_dlink(fs_id: u64) -> Result<String, String> {
+/// 获取文件下载直链 dlink 与文件大小（并行分片下载需要总长度）
+pub async fn file_dlink(fs_id: u64) -> Result<(String, u64), String> {
     let q = format!("{XPAN}/multimedia?method=filemetas&dlink=1&fsids=[{fs_id}]");
     let v = api_get(&q).await?;
     let dlink = v["list"][0]["dlink"].as_str().unwrap_or_default().to_string();
     if dlink.is_empty() {
         return Err("获取下载链接失败（目录不支持下载）".into());
     }
-    Ok(dlink)
+    let size = v["list"][0]["size"].as_u64().unwrap_or(0);
+    Ok((dlink, size))
 }
 
 pub fn urlencode(s: &str) -> String {

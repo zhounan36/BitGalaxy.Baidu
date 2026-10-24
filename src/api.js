@@ -23,6 +23,7 @@ export const api = {
     invoke("download_file", { fsId, savePath, name }),
   pauseDownload: (id) => invoke("pause_download", { id }),
   resumeDownload: (id) => invoke("resume_download", { id }),
+  openDownloadFolder: (path) => invoke("open_download_folder", { path }),
   downloadZip: (items, savePath, taskName) =>
     invoke("download_zip", { items, savePath, taskName }),
   listFilesRecursive: (dirs) => invoke("list_files_recursive", { dirs }),

@@ -11,7 +11,7 @@ const PHASE_TEXT = {
   error: "失败",
 };
 
-export default function TransferPanel({ tasks, collapsed, onToggle, onClear, onPause, onResume }) {
+export default function TransferPanel({ tasks, collapsed, onToggle, onClear, onPause, onResume, onOpenFolder }) {
   const list = Object.values(tasks);
   if (list.length === 0) return null;
   const active = list.filter((t) => t.phase !== "done" && t.phase !== "error").length;
@@ -75,6 +75,15 @@ export default function TransferPanel({ tasks, collapsed, onToggle, onClear, onP
                   onClick={() => (t.phase === "paused" ? onResume(t.id) : onPause(t.id))}
                 >
                   {t.phase === "paused" ? "继续" : "暂停"}
+                </button>
+              )}
+              {!pausable(t) && t.kind === "download" && t.path && (
+                <button
+                  className="btn ghost sm t-action"
+                  title={t.path}
+                  onClick={() => onOpenFolder(t.path)}
+                >
+                  打开文件夹
                 </button>
               )}
             </div>

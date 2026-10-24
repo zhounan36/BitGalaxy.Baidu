@@ -140,6 +140,21 @@ fn resume_download(id: String) -> bool {
     download::set_paused(&id, false)
 }
 
+/// 打开下载任务的目标文件夹（传入文件路径时打开其所在目录）
+#[tauri::command]
+fn open_download_folder(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    let dir = if p.is_dir() {
+        p
+    } else {
+        match p.parent() {
+            Some(d) if !d.as_os_str().is_empty() => d.to_path_buf(),
+            _ => p,
+        }
+    };
+    tauri_plugin_opener::open_path(dir, None::<&str>).map_err(|e| format!("打开文件夹失败: {e}"))
+}
+
 #[tauri::command]
 async fn list_files_recursive(dirs: Vec<String>) -> Result<Vec<pan_api::FileItem>, String> {
     pan_api::list_files_recursive(&dirs).await
@@ -193,6 +208,7 @@ pub fn run() {
             pause_download,
             resume_download,
             download_zip,
+            open_download_folder,
             list_files_recursive,
             share::share_parse,
             share::share_transfer,
