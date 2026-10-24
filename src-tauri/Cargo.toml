@@ -1,6 +1,6 @@
 [package]
 name = "baidupan-lite"
-version = "0.3.0"
+version = "0.4.0"
 description = "轻量版百度网盘客户端"
 authors = ["zhounan36@163.com"]
 edition = "2021"

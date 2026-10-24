@@ -1,7 +1,7 @@
 {
   "name": "baidupan-lite",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "zhounan36@163.com",
   "type": "module",
   "scripts": {
