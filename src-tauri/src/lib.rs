@@ -128,6 +128,18 @@ async fn download_file(
     download::download_file(app, fs_id, save_path, name).await
 }
 
+/// 暂停下载任务（保留 .part，继续时断点续传）
+#[tauri::command]
+fn pause_download(id: String) -> bool {
+    download::set_paused(&id, true)
+}
+
+/// 继续已暂停的下载任务
+#[tauri::command]
+fn resume_download(id: String) -> bool {
+    download::set_paused(&id, false)
+}
+
 #[tauri::command]
 async fn list_files_recursive(dirs: Vec<String>) -> Result<Vec<pan_api::FileItem>, String> {
     pan_api::list_files_recursive(&dirs).await
@@ -178,6 +190,8 @@ pub fn run() {
             create_dir,
             upload_files,
             download_file,
+            pause_download,
+            resume_download,
             download_zip,
             list_files_recursive,
             share::share_parse,

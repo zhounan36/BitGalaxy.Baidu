@@ -347,6 +347,23 @@ export default function App() {
     });
   };
 
+  // 暂停 / 继续下载任务（后端保留 .part，继续时从断点续传）
+  const pauseDownload = async (id) => {
+    try {
+      await api.pauseDownload(id);
+    } catch (e) {
+      notify(e, "error");
+    }
+  };
+
+  const resumeDownload = async (id) => {
+    try {
+      await api.resumeDownload(id);
+    } catch (e) {
+      notify(e, "error");
+    }
+  };
+
   if (!ready) return <div className="boot">正在启动…</div>;
   if (!logged)
     return (
@@ -408,6 +425,8 @@ export default function App() {
         collapsed={!showTransfers}
         onToggle={() => setShowTransfers((v) => !v)}
         onClear={clearFinishedTasks}
+        onPause={pauseDownload}
+        onResume={resumeDownload}
       />
       {modal && <Modal modal={modal} onClose={() => setModal(null)} />}
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}

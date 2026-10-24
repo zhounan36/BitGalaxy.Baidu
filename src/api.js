@@ -21,6 +21,8 @@ export const api = {
     invoke("upload_files", { localPaths, remoteDir }),
   downloadFile: (fsId, savePath, name) =>
     invoke("download_file", { fsId, savePath, name }),
+  pauseDownload: (id) => invoke("pause_download", { id }),
+  resumeDownload: (id) => invoke("resume_download", { id }),
   downloadZip: (items, savePath, taskName) =>
     invoke("download_zip", { items, savePath, taskName }),
   listFilesRecursive: (dirs) => invoke("list_files_recursive", { dirs }),

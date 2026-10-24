@@ -495,7 +495,7 @@ input[type="checkbox"] {
 }
 .transfer-row {
   display: grid;
-  grid-template-columns: 24px minmax(80px, 260px) minmax(80px, 1fr) 260px;
+  grid-template-columns: 24px minmax(80px, 260px) minmax(80px, 1fr) 260px 52px;
   align-items: center;
   gap: 10px;
   padding: 4px 0;
@@ -540,6 +540,13 @@ input[type="checkbox"] {
 }
 .t-fill.error {
   background: var(--danger);
+}
+.t-fill.paused {
+  background: #e6a23c;
+}
+.t-action {
+  padding: 1px 8px;
+  font-size: 12px;
 }
 .t-status {
   color: var(--text-2);

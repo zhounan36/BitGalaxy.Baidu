@@ -5,15 +5,17 @@ const PHASE_TEXT = {
   uploading: "上传中",
   merging: "合并文件…",
   downloading: "下载中",
+  paused: "已暂停",
   packing: "打包中",
   done: "已完成",
   error: "失败",
 };
 
-export default function TransferPanel({ tasks, collapsed, onToggle, onClear }) {
+export default function TransferPanel({ tasks, collapsed, onToggle, onClear, onPause, onResume }) {
   const list = Object.values(tasks);
   if (list.length === 0) return null;
   const active = list.filter((t) => t.phase !== "done" && t.phase !== "error").length;
+  const pausable = (t) => t.kind === "download" && (t.phase === "downloading" || t.phase === "paused");
 
   return (
     <div className={"transfer" + (collapsed ? " collapsed" : "")}>
@@ -58,13 +60,23 @@ export default function TransferPanel({ tasks, collapsed, onToggle, onClear }) {
                   : t.phase === "done"
                   ? t.message || "完成"
                   : `${PHASE_TEXT[t.phase] || ""} ${
-                      t.phase === "uploading" || t.phase === "downloading"
+                      t.phase === "uploading" || t.phase === "downloading" || t.phase === "paused"
                         ? formatPercent(t.done, t.total)
                         : ""
                     } ${t.total ? `(${formatSize(t.done)}/${formatSize(t.total)})` : ""} ${
-                      t.phase === "downloading" && t.message ? `· ${t.message}` : ""
+                      (t.phase === "downloading" || t.phase === "paused") && t.message
+                        ? `· ${t.message}`
+                        : ""
                     }`}
               </span>
+              {pausable(t) && (
+                <button
+                  className="btn ghost sm t-action"
+                  onClick={() => (t.phase === "paused" ? onResume(t.id) : onPause(t.id))}
+                >
+                  {t.phase === "paused" ? "继续" : "暂停"}
+                </button>
+              )}
             </div>
           ))}
         </div>
